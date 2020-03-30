@@ -68,10 +68,10 @@ def stochastic_update(state_grid, perception, weights_0, weights_1, rate=0.5):
     return state_grid
 
 
-def alive_masking(state_grid):
+def alive_masking(state_grid, threshold = 0.5):
 
     # alpha value must be greater than 0.1 to count as alive
-    alive_mask = state_grid[:,3,:,:] > 0.1 #F.max_pool2d(state_grid[:,:,], kernel_size=3) > 0.1
+    alive_mask = state_grid[:,3,:,:] > threshold #F.max_pool2d(state_grid[:,:,], kernel_size=3) > 0.1
     alive_mask = alive_mask.double()
     state_grid *= alive_mask
 
@@ -88,8 +88,8 @@ if __name__ == "__main__":
     state_grid = torch.zeros((1,16,64,64))
     state_grid[:,:,32,32] = 0.5
     state_grid = state_grid.double()
-    weights_0 = (torch.randn(48, 1, 1, 1, dtype=my_dtype)).double().requires_grad_()
-    weights_1 = (torch.randn(16, 48, 1, 1, dtype=my_dtype)).double().requires_grad_()
+    weights_0 = (3*torch.rand(48, 1, 1, 1, dtype=my_dtype)).double().requires_grad_()
+    weights_1 = (3*torch.rand(16, 48, 1, 1, dtype=my_dtype)).double().requires_grad_()
 
     result = sobel_conv2d(state_grid)
 
@@ -146,8 +146,8 @@ if __name__ == "__main__":
         import pdb; pdb.set_trace()
 
         for ii in range(128):
-            state_grid = alive_masking(state_grid)
             state_grid = stochastic_update(state_grid, result, weights_0, weights_1)
+            state_grid = alive_masking(state_grid)
             img = state_grid[0, 0:3, :, :].permute(1,2,0) 
             img = img.detach().numpy()
 
