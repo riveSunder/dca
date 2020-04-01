@@ -33,7 +33,7 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
 
     groups_0 = 1 #perception.shape[1]
     x = F.conv2d(perception, weights_0, padding=0, groups=groups_0, bias=bias_0)
-    x = torch.tanh(x) #torch.relu(x) #tanh(x) #relu(x)
+    x = torch.tanh(x) #relu(x)
 
     groups_1 = 1# 16
     #  weights.shape[1] = x.shape[1] / groups
@@ -41,7 +41,7 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
 
     # squash result from 0 to 1
     
-    #x = torch.sigmoid(x)
+    x = torch.sigmoid(x)
     
     return x
 
@@ -87,20 +87,25 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    weights_0 = ( 3e-1 * torch.randn(48, 48, 1, 1, dtype=my_dtype, device=device))
-    weights_1 = ( 1e-1 * torch.randn(16, 48, 1, 1, dtype=my_dtype, device=device))
+    h_dim = 128
+    x_dim = 48
+    y_dim = 16
+
+    weights_0 = ( 3e-1 * torch.randn(h_dim, x_dim, 1, 1, dtype=my_dtype, device=device))
+    weights_1 = ( 1e-1 * torch.randn(y_dim, h_dim, 1, 1, dtype=my_dtype, device=device))
     weights_0.requires_grad = True
     weights_1.requires_grad = True
-    bias_0 = torch.zeros(48, dtype=my_dtype, device=device, requires_grad=True)
-    bias_1 = torch.zeros(16, dtype=my_dtype, device=device, requires_grad=True)
+    bias_0 = torch.zeros(h_dim, dtype=my_dtype, device=device, requires_grad=True)
+    bias_1 = torch.zeros(y_dim, dtype=my_dtype, device=device, requires_grad=True)
     
     if(1):
         filename = "./data/aghast00.png"
         target = skimage.io.imread(filename)
         target = torch.tensor(target /255).double().to(device)
 
-        lr = 1e-4
+        lr = 1e-5
         disp_every = 10 #20
+        batch_size = 4
         num_epochs = 100000
         num_steps = 64
         my_rate = 0.8
@@ -113,7 +118,6 @@ if __name__ == "__main__":
             for epoch in range(num_epochs):
                 #weights_0.zero_grad()
                 #weights_1.zero_grad()
-                batch_size = 10
                 loss = 0.0
                 for batch in range(batch_size):
                     state_grid = torch.zeros((1,16,64,64)).double()
