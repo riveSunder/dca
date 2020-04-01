@@ -31,17 +31,17 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
     # use conv2d with 1x1 kernels and groups = input channels, then sum
     # to effectively get dense nn for each location
 
-    groups_0 = perception.shape[1]
-    x = F.conv2d(perception, weights_0, padding=0, groups=groups_0)
-    x = torch.relu(x) #tanh(x) #relu(x)
+    groups_0 = 1 #perception.shape[1]
+    x = F.conv2d(perception, weights_0, padding=0, groups=groups_0, bias=bias_0)
+    x = torch.tanh(x) #torch.relu(x) #tanh(x) #relu(x)
 
-    groups_1 = 1 #x.shape[1]
+    groups_1 = 1# 16
     #  weights.shape[1] = x.shape[1] / groups
-    x = F.conv2d(x, weights_1, padding=0, groups=groups_1)
+    x = F.conv2d(x, weights_1, padding=0, groups=groups_1, bias=bias_1)
 
     # squash result from 0 to 1
     
-    x = torch.sigmoid(x)
+    #x = torch.sigmoid(x)
     
     return x
 
@@ -87,12 +87,12 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    weights_0 = (5e-1 * torch.randn(48, 1, 1, 1, dtype=my_dtype, device=device))
-    weights_1 = (5e-1 * torch.randn(16, 48, 1, 1, dtype=my_dtype, device=device))
+    weights_0 = ( 3e-1 * torch.randn(48, 48, 1, 1, dtype=my_dtype, device=device))
+    weights_1 = ( 1e-1 * torch.randn(16, 48, 1, 1, dtype=my_dtype, device=device))
     weights_0.requires_grad = True
     weights_1.requires_grad = True
-    bias_0 = torch.ones(48, dtype=my_dtype, device=device, requires_grad=True)
-    bias_1 = torch.ones(16, dtype=my_dtype, device=device, requires_grad=True)
+    bias_0 = torch.zeros(48, dtype=my_dtype, device=device, requires_grad=True)
+    bias_1 = torch.zeros(16, dtype=my_dtype, device=device, requires_grad=True)
     
     if(1):
         filename = "./data/aghast00.png"
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         target = torch.tensor(target /255).double().to(device)
 
         lr = 1e-4
-        disp_every = 20
+        disp_every = 10 #20
         num_epochs = 100000
         num_steps = 64
         my_rate = 0.8
@@ -113,20 +113,25 @@ if __name__ == "__main__":
             for epoch in range(num_epochs):
                 #weights_0.zero_grad()
                 #weights_1.zero_grad()
-                state_grid = torch.zeros((1,16,64,64)).double()
-                state_grid[:,0:4,32,32] += 1.0
-                state_grid = state_grid.to(device)
+                batch_size = 10
+                loss = 0.0
+                for batch in range(batch_size):
+                    state_grid = torch.zeros((1,16,64,64)).double()
+                    state_grid[:,0:4,32,32] += 1.0
+                    state_grid = state_grid.to(device)
 
-                for ii in range(num_steps + np.random.randint(int(num_steps/2))):
-                    perception = sobel_conv2d(state_grid) 
-                    state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
-                            bias_0, bias_1, rate=my_rate)
-                    state_grid = alive_masking(state_grid, threshold=0.1)
+                    for ii in range(num_steps + np.random.randint(int(num_steps/2))):
+                        perception = sobel_conv2d(state_grid) 
+                        state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
+                                bias_0, bias_1, rate=my_rate)
+                        state_grid = alive_masking(state_grid, threshold=0.1)
 
-                pred = state_grid[0, 0:4, :, :].permute(1,2,0)
+                    pred = state_grid[0, 0:4, :, :].permute(1,2,0)
 
-                loss = torch.mean((pred-target)**2)
+                    loss += torch.mean((pred-target)**2) / batch_size
+
                 loss.backward()
+
                 optimizer.step()
                 if epoch % disp_every == 0:
                     elapsed = time.time() - t0
