@@ -32,17 +32,20 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
     # to effectively get dense nn for each location
 
     groups_0 = 1 #perception.shape[1]
-    x = F.conv2d(perception, weights_0, padding=0, groups=groups_0, bias=bias_0)
-    x = torch.tanh(x) #relu(x)
+    x = F.conv2d(perception, weights_0, padding=0, groups=groups_0) #, bias=bias_0)
+    x = torch.relu(x)
 
     groups_1 = 1# 16
     #  weights.shape[1] = x.shape[1] / groups
-    x = F.conv2d(x, weights_1, padding=0, groups=groups_1, bias=bias_1)
+    x = F.conv2d(x, weights_1, padding=0, groups=groups_1) #, bias=bias_1)
 
     # squash result from 0 to 1
     
-    x = torch.sigmoid(x)
+    #x = torch.sigmoid(x-50)
     
+    #x = (x - torch.min(x)) / torch.max(x - torch.min(x))
+    x = torch.tanh(x)
+
     return x
 
 #def update(perception, model):
@@ -91,8 +94,8 @@ if __name__ == "__main__":
     x_dim = 48
     y_dim = 16
 
-    weights_0 = ( 3e-1 * torch.randn(h_dim, x_dim, 1, 1, dtype=my_dtype, device=device))
-    weights_1 = ( 1e-1 * torch.randn(y_dim, h_dim, 1, 1, dtype=my_dtype, device=device))
+    weights_0 = ( 1e-1 * torch.randn(h_dim, x_dim, 1, 1, dtype=my_dtype, device=device))
+    weights_1 = ( 2e-1 * torch.randn(y_dim, h_dim, 1, 1, dtype=my_dtype, device=device))
     weights_0.requires_grad = True
     weights_1.requires_grad = True
     bias_0 = torch.zeros(h_dim, dtype=my_dtype, device=device, requires_grad=True)
@@ -103,8 +106,8 @@ if __name__ == "__main__":
         target = skimage.io.imread(filename)
         target = torch.tensor(target /255).double().to(device)
 
-        lr = 1e-5
-        disp_every = 10 #20
+        lr = 1e-4
+        disp_every = 100 #20
         batch_size = 4
         num_epochs = 100000
         num_steps = 64
@@ -125,11 +128,12 @@ if __name__ == "__main__":
                     state_grid = state_grid.to(device)
 
                     for ii in range(num_steps + np.random.randint(int(num_steps/2))):
+                        state_grid = alive_masking(state_grid, threshold=0.1)
                         perception = sobel_conv2d(state_grid) 
                         state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                                 bias_0, bias_1, rate=my_rate)
-                        state_grid = alive_masking(state_grid, threshold=0.1)
 
+                    state_grid = alive_masking(state_grid, threshold=0.1)
                     pred = state_grid[0, 0:4, :, :].permute(1,2,0)
 
                     loss += torch.mean((pred-target)**2) / batch_size
@@ -138,6 +142,11 @@ if __name__ == "__main__":
 
                 optimizer.step()
                 if epoch % disp_every == 0:
+                    num_alive = torch.sum(state_grid[0,3,:,:] > 0.1)
+                    num_cells = state_grid.shape[2]*state_grid.shape[3]
+                    print("num live cells: {} of {}".format(num_alive, num_cells))
+                    print("ca grid stats: mean {:.2e}, min {:.2e}, max {:.2e}".format(\
+                            torch.mean(state_grid).cpu().detach().numpy(), torch.min(state_grid).cpu().detach().numpy(), torch.max(state_grid).cpu().detach().numpy())) 
                     elapsed = time.time() - t0
                     print("loss at epoch {}: {:.3e}, elapsed: {:.3f}, per epoch {:.2e}"\
                             .format(epoch, loss, elapsed, elapsed/(1+epoch)))
@@ -150,12 +159,13 @@ if __name__ == "__main__":
         state_grid = state_grid.to(device)
 
         for ii in range(128):
-            perception = sobel_conv2d(state_grid) 
-            state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
-                    bias_0, bias_1, rate=my_rate)
             state_grid = alive_masking(state_grid)
             img = state_grid[0, 0:4, :, :].permute(1,2,0) 
             img = img.cpu().detach().numpy()
 
             skimage.io.imsave("./output/state{}.png".format(ii), img)
+
+            perception = sobel_conv2d(state_grid) 
+            state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
+                    bias_0, bias_1, rate=my_rate)
         print("here")
