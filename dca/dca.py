@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import os
 
 
 import torch
@@ -89,6 +90,13 @@ def stochastic_update(state_grid, perception, weights_0, weights_1, bias_0, bias
 
 def alive_masking(state_grid, threshold = 0.1):
 
+    # in case there is no alpha channel
+    # this should only take place when loading images from disk
+    if state_grid.shape[1] == 3 and state_grid.shape[0] == 1:
+        temp = torch.ones_like(state_grid[0,0,:,:])
+
+        temp[torch.mean(state_grid[0], dim=0) > 0.95] *= 0.0
+        state_grid = torch.cat([state_grid, temp.unsqueeze(0).unsqueeze(0)], dim=1)
     # alpha value must be greater than 0.1 to count as alive
     alive_mask = state_grid[:,3:4,:,:] > threshold #F.max_pool2d(state_grid[:,:,], kernel_size=3) > 0.1
     alive_mask = alive_mask.double()
@@ -194,7 +202,7 @@ if __name__ == "__main__":
         device = "cpu"
 
     h_dim = 16
-    y_dim = 6
+    y_dim = 16
     x_dim = y_dim * 3
 
     if(1):
@@ -217,12 +225,25 @@ if __name__ == "__main__":
     
     if(1):
         #filename = "./data/aghast00.png"
-        filename = "./data/planarian_02.png"
-        target = skimage.io.imread(filename)
-        target = torch.tensor(target /255).double().to(device)
-        target = target.permute(2,0,1).unsqueeze(0)
-        target = alive_masking(target)
+        #filename = "./data/planarian_02.png"
 
+        # load training dataset
+        training_dir = "./data/training/"
+        dir_list = os.listdir(training_dir)
+        targets = torch.Tensor().double().to(device)
+        for filename in dir_list:
+
+            target = skimage.io.imread(training_dir + filename)
+
+
+            target = torch.tensor(target /255).double().to(device)
+            target = target.permute(2,0,1).unsqueeze(0)
+
+            target = alive_masking(target)
+
+            targets = torch.cat([targets, target], dim=0)
+
+        num_samples = targets.shape[0]
 
         lr = 5e-4
         disp_every = 2500 #20
@@ -237,12 +258,12 @@ if __name__ == "__main__":
         rr = rr[np.newaxis, :, :]
         rr = rr * np.ones((y_dim, 64,64))
         
-        start_r = 26.00
+        start_r = 32.00
         radius = start_r * 1.0
-        min_r = 17.
-        r_decay = 0.95
+        min_r = 32.
+        r_decay = 0.9995
         grid_mask = 0.05
-        min_mask = 0.25
+        min_mask = 0.5
         mask_decay = 0.0005
         bite_radius = 2.0
 
@@ -274,25 +295,37 @@ if __name__ == "__main__":
 
                     state_grid = torch.zeros((batch_size, y_dim, 64,64)).double()
                     #state_grid[:,:,32,32] += 1.0
-                    for jj in range(batch_size):
-                        state_grid[jj,0:4] = target * (torch.rand_like(target) > grid_mask)
-                        r_mask = np.zeros((y_dim, 64, 64))
-                        r_mask[rr <= (radius + np.random.random())] = 1.0
-                        state_grid[jj] *= r_mask
-
-                    state_grid = take_a_bite(state_grid, bite_radius)
-
-                    state_grid = state_grid.to(device)
                     
-                    extra_steps = max([1, int(num_steps*0.5)])
+                    indices = np.random.choice(np.arange(num_samples), \
+                            p=[1/num_samples] * num_samples,\
+                            size = batch_size)
+
+                    target_batch = torch.zeros(batch_size, 4, 64,64)
+                    for jj in range(batch_size):
+                        # omit pixels 
+                        target_batch[jj,:,:,:] = targets[indices[jj]]
+                        state_grid[jj,0:4] = targets[indices[jj]] \
+                                * (torch.rand_like(target) > grid_mask)\
+                                + torch.rand_like(target) * grid_mask/10.0 #noise_scale
+                        
+                        #r_mask = np.zeros((y_dim, 64, 64))
+                        #r_mask[rr <= (radius + np.random.random())] = 1.0
+                        #state_grid[jj] *= r_mask
+
+                    #state_grid = take_a_bite(state_grid, bite_radius)
+                    state_grid = state_grid.to(device)
+                    target_batch = target_batch.to(device)
+                    
+
+                    extra_steps = 6 #max([1, int(num_steps*0.5)])
                     for ii in range(num_steps + extra_steps): # + np.random.randint(int(num_steps/2))):
                         state_grid = alive_masking(state_grid)
 
                         if ii >= (num_steps):
 
                             pred = state_grid[:,0:4,:,:]
-                            loss += torch.mean(torch.abs(pred-target)\
-                                    + (pred-target)**2) / extra_steps
+                            loss += torch.mean(torch.abs(pred-target_batch)\
+                                    + (pred-target_batch)**2) / extra_steps
 
                         perception = sobel_conv2d(state_grid) 
                         state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
@@ -306,14 +339,14 @@ if __name__ == "__main__":
 
                 optimizer.step()
 
-                if loss <= 0.065: #epoch % 20 == 0:
+                if loss <= 0.035: #epoch % 20 == 0:
                     grid_mask = min([min_mask, grid_mask + mask_decay])
                     radius = max([min_r, radius * r_decay])
 
                     num_steps = max([6, \
                             min([16, int(num_steps + np.sign(np.random.randn()+0.025))])])
 
-                    bite_increase = 0.05
+                    bite_increase = 0.0125
                     bite_max = 14.0
                     bite_radius = min([bite_max, bite_radius + bite_increase])
 
