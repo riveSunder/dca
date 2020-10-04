@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 import skimage
 import skimage.io 
+import skimage.transform 
 import matplotlib.pyplot as plt
 
 def sobel_conv2d(state_grid):
@@ -95,7 +96,7 @@ def alive_masking(state_grid, threshold = 0.1):
     if state_grid.shape[1] == 3 and state_grid.shape[0] == 1:
         temp = torch.ones_like(state_grid[0,0,:,:])
 
-        temp[torch.mean(state_grid[0], dim=0) > 0.95] *= 0.0
+        temp[torch.mean(state_grid[0], dim=0) > 0.99] *= 0.0
         state_grid = torch.cat([state_grid, temp.unsqueeze(0).unsqueeze(0)], dim=1)
     # alpha value must be greater than 0.1 to count as alive
     alive_mask = state_grid[:,3:4,:,:] > threshold #F.max_pool2d(state_grid[:,:,], kernel_size=3) > 0.1
@@ -136,11 +137,14 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
     with torch.no_grad():
         
         state_grid = torch.zeros((1, y_dim, 64,64)).double()
-        state_grid[0,0:4] = target * (torch.rand_like(target) > grid_mask)
+        state_grid[0,0:4] = target \
+                + torch.rand_like(target) * grid_mask 
+                #* (torch.rand_like(target) > grid_mask)\
+
         r_mask = np.zeros((y_dim, 64, 64))
         r_mask[rr <= (radius + np.random.random())] = 1.0
         state_grid[0] *= r_mask
-        state_grid = take_a_bite(state_grid, bite_radius)
+        #state_grid = take_a_bite(state_grid, bite_radius)
 
         #state_grid[:,0:4,32,32] += 1.0
         state_grid = state_grid.to(device)
@@ -228,28 +232,35 @@ if __name__ == "__main__":
         #filename = "./data/planarian_02.png"
 
         # load training dataset
-        training_dir = "./data/training/"
+        training_dir = "./data/pokemon/training/"
+        #training_dir = "./data/training/"
         dir_list = os.listdir(training_dir)
+        #dir_list.reverse()
         targets = torch.Tensor().double().to(device)
+        
+        dim_x, dim_y = 64, 64
+
         for filename in dir_list:
 
             target = skimage.io.imread(training_dir + filename)
 
+            target = skimage.transform.resize(target, (dim_x, dim_y))
 
-            target = torch.tensor(target /255).double().to(device)
+            target = torch.tensor(target).double().to(device)
             target = target.permute(2,0,1).unsqueeze(0)
 
             target = alive_masking(target)
 
             targets = torch.cat([targets, target], dim=0)
-
+            
         num_samples = targets.shape[0]
 
-        lr = 5e-4
-        disp_every = 2500 #20
+        lr = 3e-4
+        disp_every = 250 #20
         batch_size = 8
-        num_epochs = 250000
-        num_steps = 4
+        num_epochs = 25000
+        num_steps = 3
+        max_steps = 8
         my_rate = 0.85
         l2_reg = 1e-5
 
@@ -262,10 +273,12 @@ if __name__ == "__main__":
         radius = start_r * 1.0
         min_r = 32.
         r_decay = 0.9995
-        grid_mask = 0.05
-        min_mask = 0.5
+        grid_mask = 0.01
+        min_mask = 0.45
         mask_decay = 0.0005
-        bite_radius = 2.0
+        bite_increase = 0.0025
+        bite_max = 1.0
+        bite_radius = 1.0
 
         optimizer = torch.optim.Adam([weights_0, weights_1, bias_0, bias_1], lr=lr)
         
@@ -290,8 +303,7 @@ if __name__ == "__main__":
                     bias_1.requires_grad = True
 
 
-                loss = 0.0
-                for batch in range(1): #batch_size):
+                for batch in range(num_samples // batch_size): #batch_size):
 
                     state_grid = torch.zeros((batch_size, y_dim, 64,64)).double()
                     #state_grid[:,:,32,32] += 1.0
@@ -305,19 +317,19 @@ if __name__ == "__main__":
                         # omit pixels 
                         target_batch[jj,:,:,:] = targets[indices[jj]]
                         state_grid[jj,0:4] = targets[indices[jj]] \
-                                * (torch.rand_like(target) > grid_mask)\
-                                + torch.rand_like(target) * grid_mask/10.0 #noise_scale
+                                + torch.rand_like(target) * 3 * grid_mask 
+                                #* (torch.rand_like(target) > grid_mask)\
                         
-                        #r_mask = np.zeros((y_dim, 64, 64))
-                        #r_mask[rr <= (radius + np.random.random())] = 1.0
-                        #state_grid[jj] *= r_mask
+                        r_mask = np.zeros((y_dim, 64, 64))
+                        r_mask[rr <= (radius + np.random.random())] = 1.0
+                        state_grid[jj] *= r_mask
 
                     #state_grid = take_a_bite(state_grid, bite_radius)
                     state_grid = state_grid.to(device)
                     target_batch = target_batch.to(device)
-                    
 
                     extra_steps = 6 #max([1, int(num_steps*0.5)])
+                    loss = 0.0
                     for ii in range(num_steps + extra_steps): # + np.random.randint(int(num_steps/2))):
                         state_grid = alive_masking(state_grid)
 
@@ -332,23 +344,21 @@ if __name__ == "__main__":
                                 bias_0, bias_1, rate=my_rate)
 
 
-                for params in [weights_0, weights_1, bias_0, bias_1]:
-                    loss += l2_reg * torch.sum(params)
+                    for params in [weights_0, weights_1, bias_0, bias_1]:
+                        loss += l2_reg * torch.sum(params)
 
-                loss.backward()
+                    loss.backward()
 
-                optimizer.step()
+                    optimizer.step()
 
-                if loss <= 0.035: #epoch % 20 == 0:
-                    grid_mask = min([min_mask, grid_mask + mask_decay])
-                    radius = max([min_r, radius * r_decay])
+                    if loss <= 0.0125: #epoch % 20 == 0:
+                        grid_mask = min([min_mask, grid_mask + mask_decay])
+                        radius = max([min_r, radius * r_decay])
 
-                    num_steps = max([6, \
-                            min([16, int(num_steps + np.sign(np.random.randn()+0.025))])])
+                        num_steps = max([6, \
+                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.025))])])
 
-                    bite_increase = 0.0125
-                    bite_max = 14.0
-                    bite_radius = min([bite_max, bite_radius + bite_increase])
+                        bite_radius = min([bite_max, bite_radius + bite_increase])
 
 
 
