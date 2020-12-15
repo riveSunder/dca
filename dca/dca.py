@@ -147,6 +147,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
         state_grid = take_a_bite(state_grid, bite_radius)
 
         #state_grid[:,0:4,32,32] += 1.0
+        inp = 1.0 * state_grid[0, 0:4, :, :].permute(1,2,0)
         state_grid = state_grid.to(device)
 
         np.save("./dca_model.npy", [weights_0, weights_1, bias_0, bias_1])
@@ -163,13 +164,16 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
 
             if target is not None and ii == (num_steps):
                 fig = plt.figure(figsize=(9,3))
-                plt.subplot(131)
+                plt.subplot(141)
+                plt.imshow(inp)
+                plt.title("input")
+                plt.subplot(142)
                 plt.imshow(tgt)
                 plt.title("target")
-                plt.subplot(132)
-                plt.imshow(img)
+                plt.subplot(143)
+                plt.imshow(img2)
                 plt.title("output epoch {}, step {}".format(epoch, ii))
-                plt.subplot(133)
+                plt.subplot(144)
 
                 plt.imshow(np.mean(np.abs(img2-tgt), axis=2))
                 plt.title("absolute mean difference")
@@ -271,14 +275,14 @@ if __name__ == "__main__":
         rr = rr[np.newaxis, :, :]
         rr = rr * np.ones((y_dim, dim_x, dim_y))
         
-        start_r = 30.00
+        start_r = 28.0
         radius = start_r * 1.0
         min_r = dim_x // 8
-        r_decay = 0.995
-        grid_mask = 0.01
+        r_decay = 0.95
+        grid_mask = 0.1
         max_mask = 0.5
         mask_decay = 0.0005
-        bite_increase = 1.0
+        bite_increase = 0.1
         bite_max = 6.00
         bite_radius = 2.00
 
