@@ -12,7 +12,8 @@ import skimage.io
 import skimage.transform 
 import matplotlib.pyplot as plt
 
-def sobel_conv2d(state_grid):
+def sobel_conv2d(state_grid, device="cpu"):
+
     my_dim = state_grid.shape[1]
     neighborhood = torch.tensor(np.array([[[[1, 1, 1], [1, 0, 1], [1, 1, 1]]]]),\
             dtype=torch.float64)
@@ -118,12 +119,55 @@ def take_a_bite(img_tensor, my_radius = 6.0):
     
     return img_tensor
 
-def log_progress(weights_0, weights_1, bias_0, bias_1, epoch, target):
+def evaluate_loss(weights_0, weights_1, bias_0, bias_1, target_batch, \
+        y_dim=16, min_r=4.0, mask_noise=0.5, num_steps=10):
 
-    pass
+    target_batch_size = target_batch.shape[0]
+    dim_x, dim_y = target_batch.shape[2], target_batch.shape[3]
+    xx, yy = np.meshgrid(np.linspace(-dim_x // 2, dim_x // 2, dim_x), \
+            np.linspace(-dim_x // 2 , dim_y // 2, dim_y))
+    rr = np.sqrt(xx**2 + yy**2)
+    rr = rr[np.newaxis, :, :]
+    rr = rr * np.ones((y_dim, dim_x, dim_y))
+    device = "cpu"
+    my_rate = 0.9
+    
+    weights_0 = weights_0.to(device)
+    weights_1 = weights_1.to(device)
+    bias_0 = bias_0.to(device)
+    bias_1 = bias_1.to(device)
+
+    with torch.no_grad():
+        
+        state_grid = torch.zeros((target_batch_size, y_dim, dim_x, dim_y)).double()
+        state_grid[:,0:4] = target_batch \
+                + torch.rand_like(target_batch) * mask_noise\
+                * (torch.rand_like(target_batch) > mask_noise)
+
+        r_mask = np.zeros((y_dim, dim_x, dim_y))
+        r_mask[rr <= min_r] = 1.0
+        state_grid[0] *= r_mask
+
+        state_grid = state_grid.to(device)
+        
+        #inp = 1.0 * state_grid[0, 0:4, :, :].permute(1,2,0).cpu().numpy()
+        #tgt = target_batch[0].permute(1,2,0).cpu().numpy()
+
+        for step in range(num_steps):
+
+            perception = sobel_conv2d(state_grid, device=device) 
+            state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
+                    bias_0, bias_1, rate=my_rate)
+
+        pred = state_grid[:,0:4,:,:]
+        loss = torch.mean(torch.abs(pred-target_batch)\
+                + torch.abs((pred-target_batch)**2)) 
+
+    return loss
 
 def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_dim=8):
 
+    
     with torch.no_grad():
         
         state_grid = torch.zeros((1, y_dim, dim_x, dim_y)).double()
@@ -184,7 +228,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
             
 
 
-            perception = sobel_conv2d(state_grid) 
+            perception = sobel_conv2d(state_grid, device=device) 
             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                     bias_0, bias_1, rate=my_rate)
 
@@ -333,7 +377,7 @@ if __name__ == "__main__":
                             loss += torch.mean(torch.abs(pred-target_batch)\
                                     + (pred-target_batch)**2) / extra_steps
 
-                        perception = sobel_conv2d(state_grid) 
+                        perception = sobel_conv2d(state_grid, device=device) 
                         state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                                 bias_0, bias_1, rate=my_rate)
 
