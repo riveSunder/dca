@@ -120,7 +120,7 @@ def take_a_bite(img_tensor, my_radius = 6.0):
     return img_tensor
 
 def evaluate_loss(weights_0, weights_1, bias_0, bias_1, target_batch, \
-        y_dim=16, min_r=4.0, mask_noise=0.5, num_steps=10):
+        y_dim=16, min_r=4.0, mask_noise=0.5, num_steps=12, device="cpu"):
 
     target_batch_size = target_batch.shape[0]
     dim_x, dim_y = target_batch.shape[2], target_batch.shape[3]
@@ -129,13 +129,14 @@ def evaluate_loss(weights_0, weights_1, bias_0, bias_1, target_batch, \
     rr = np.sqrt(xx**2 + yy**2)
     rr = rr[np.newaxis, :, :]
     rr = rr * np.ones((y_dim, dim_x, dim_y))
-    device = "cpu"
     my_rate = 0.9
     
     weights_0 = weights_0.to(device)
     weights_1 = weights_1.to(device)
     bias_0 = bias_0.to(device)
     bias_1 = bias_1.to(device)
+    
+    target_batch = target_batch.to(device)
 
     with torch.no_grad():
         
@@ -232,7 +233,6 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                     bias_0, bias_1, rate=my_rate)
 
-
 if __name__ == "__main__":
 
     display = False
@@ -293,10 +293,10 @@ if __name__ == "__main__":
             
         num_samples = targets.shape[0]
 
-        lr = 1e-4
+        lr = 3e-4
         disp_every = 250 #20
-        batch_size = 4
-        num_epochs = 55000
+        batch_size = 1
+        num_epochs = 256000
         num_steps = 2
         max_steps = 16
         my_rate = 0.9
@@ -323,6 +323,11 @@ if __name__ == "__main__":
         
         try:
             t0 = time.time()
+            exp_id = str(t0)[-16:-7]
+            progress = {}
+            progress["loss"] = [] 
+            progress["epoch"] = [] 
+            progress["time"] = [] 
             for epoch in range(num_epochs):
                 
                 if weights_0.grad is not None:
@@ -403,7 +408,7 @@ if __name__ == "__main__":
                 if epoch % disp_every == 0:
 
                     print("grid_mask={:.2f}, num_steps={},radius={:.2f}, bite={:.2f}".format(\
-                            grid_mask, num_steps,  radius, bite_radius))
+                            grid_mask, num_steps, radius, bite_radius))
 
                     
                     num_alive = torch.sum(state_grid[0,3,:,:] > 0.1)
@@ -418,9 +423,29 @@ if __name__ == "__main__":
                     save_things(weights_0, weights_1, bias_0, bias_1, epoch=epoch,\
                             target=targets[indices[0]], y_dim=y_dim)
 
+                    loss = evaluate_loss(weights_0, weights_1, bias_0, bias_1,\
+                            targets)
+
+                    wall_time = time.time() - t0
+                    progress["loss"].append(loss)
+                    progress["epoch"].append(epoch)
+                    progress["time"].append(wall_time)
+
+                    np.save("results/progress_{}.npy".format(exp_id), progress, allow_pickle=True)
+
         except KeyboardInterrupt:
             pass
 
-        save_things(weights_0, weights_1, bias_0, bias_1, epoch=epoch, target=target, y_dim=y_dim)
+        save_things(weights_0, weights_1, bias_0, bias_1, epoch=epoch, \
+                target=targets[indices[0]], y_dim=y_dim)
+
+        loss = evaluate_loss(weights_0, weights_1, bias_0, bias_1,\
+                targets)
+
+        wall_time = time.time() - t0
+        progress["loss"].append(loss)
+        progress["epoch"].append(epoch)
+        progress["time"].append(wall_time)
+        np.save("results/progress_{}.npy".format(exp_id), progress, allow_pickle=True)
 
         print("here")
