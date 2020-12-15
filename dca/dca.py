@@ -34,10 +34,6 @@ def sobel_conv2d(state_grid):
 
     grad_n = F.conv2d(state_grid, nbhd, padding=1, groups=my_dim)
 
-#    grad_n /= torch.sum(torch.abs(nbhd))
-#    grad_x /= torch.sum(torch.abs(sobel_x))
-#    grad_y /= torch.sum(torch.abs(sobel_y))
-
     perception = torch.cat([state_grid, grad_n, grad_x + grad_y], axis=1)
 
     return perception
@@ -52,7 +48,7 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
         x = F.conv2d(perception, weights_0, padding=0, groups=groups_0, bias=bias_0)
     else:
         x = F.conv2d(perception, weights_0, padding=0, groups=groups_0)
-    #x = torch.tanh(x)
+
     x = torch.atan(x)
 
     groups_1 =  1
@@ -62,19 +58,9 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
     else:
         x = F.conv2d(x, weights_1, padding=0, groups=groups_1)
 
-
     x = torch.atan(x)
-    # squash result from 0 to 1
-
 
     return x
-
-#def update(perception, model):
-#
-#    perception = perception.reshape(perception.shape[0], \
-#            perception.shape[1]* perception.shape[2] * perception.shape[3])
-#
-#    x = model(perception)
 
 def stochastic_update(state_grid, perception, weights_0, weights_1, bias_0, bias_1, rate=0.5):
 
@@ -131,6 +117,10 @@ def take_a_bite(img_tensor, my_radius = 6.0):
 
     
     return img_tensor
+
+def log_progress(weights_0, weights_1, bias_0, bias_1, epoch, target):
+
+    pass
 
 def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_dim=8):
 
@@ -236,11 +226,10 @@ if __name__ == "__main__":
         #filename = "./data/planarian_02.png"
 
         # load training dataset
-        training_dir = "./data/pokemon/training/"
+        #training_dir = "./data/pokemon/training/"
         training_dir = "./data/one_pokemon/"
         #training_dir = "./data/training/"
         dir_list = os.listdir(training_dir)
-        #dir_list.reverse()
         targets = torch.Tensor().double().to(device)
         
         dim_x, dim_y = 64, 64
@@ -311,8 +300,7 @@ if __name__ == "__main__":
 
                 for batch in range(num_samples // batch_size): #batch_size):
 
-                    state_grid = torch.zeros((batch_size, y_dim, dim_x,dim_y)).double()
-                    #state_grid[:,:,32,32] += 1.0
+                    state_grid = torch.zeros((batch_size, y_dim, dim_x, dim_y)).double()
                     
                     indices = np.random.choice(np.arange(num_samples), \
                             p=[1/num_samples] * num_samples,\
@@ -382,7 +370,6 @@ if __name__ == "__main__":
                     elapsed = time.time() - t0
                     print("loss at epoch {}: {:.3e}, elapsed: {:.3f}, per epoch {:.2e}"\
                             .format(epoch, loss, elapsed, elapsed/(1+epoch)))
-                    #if epoch % (10*disp_every) == 0:
 
                     save_things(weights_0, weights_1, bias_0, bias_1, epoch=epoch,\
                             target=targets[indices[0]], y_dim=y_dim)
