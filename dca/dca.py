@@ -198,17 +198,17 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
             img2 = np.array(img2)
 
             if target is not None and ii == (num_steps):
-                fig = plt.figure(figsize=(9,3))
-                plt.subplot(141)
+                fig = plt.figure(figsize=(9,9))
+                plt.subplot(221)
                 plt.imshow(inp)
                 plt.title("input")
-                plt.subplot(142)
+                plt.subplot(222)
                 plt.imshow(tgt)
                 plt.title("target")
-                plt.subplot(143)
+                plt.subplot(223)
                 plt.imshow(img2)
                 plt.title("output epoch {}, step {}".format(epoch, ii))
-                plt.subplot(144)
+                plt.subplot(224)
 
                 plt.imshow(np.mean(np.abs(img2-tgt), axis=2))
                 plt.title("absolute mean difference")
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         dir_list = os.listdir(training_dir)
         targets = torch.Tensor().double().to(device)
         
-        dim_x, dim_y = 64, 64
+        dim_x, dim_y = 256, 256
 
         for filename in dir_list:
 
@@ -294,11 +294,11 @@ if __name__ == "__main__":
         num_samples = targets.shape[0]
 
         lr = 3e-4
-        disp_every = 250 #20
-        batch_size = 1
-        num_epochs = 256000
+        disp_every = 1000 #20
+        batch_size = 4
+        num_epochs = 100000
         num_steps = 2
-        max_steps = 16
+        max_steps = 32
         my_rate = 0.9
         l2_reg = 1e-5
 
@@ -308,9 +308,9 @@ if __name__ == "__main__":
         rr = rr[np.newaxis, :, :]
         rr = rr * np.ones((y_dim, dim_x, dim_y))
         
-        start_r = 28.0
+        start_r = dim_x / 2
         radius = start_r * 1.0
-        min_r = dim_x // 8
+        min_r = dim_x / 64
         r_decay = 0.95
         grid_mask = 0.1
         max_mask = 0.5
@@ -399,7 +399,7 @@ if __name__ == "__main__":
                         radius = max([min_r, radius * r_decay])
 
                         num_steps = max([6, \
-                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.025))])])
+                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.125))])])
 
                         bite_radius = min([bite_max, bite_radius + bite_increase])
 
