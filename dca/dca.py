@@ -40,8 +40,6 @@ def sobel_conv2d(state_grid, device="cpu"):
     return perception
 
 def update(perception, weights_0, weights_1, bias_0, bias_1):
-    # use conv2d with 1x1 kernels and groups = input channels, then sum
-    # to effectively get dense nn for each location
 
     groups_0 = 1
     use_bias = 1
@@ -53,13 +51,13 @@ def update(perception, weights_0, weights_1, bias_0, bias_1):
     x = torch.atan(x)
 
     groups_1 =  1
-    #  weights.shape[1] = x.shape[1] / groups
+
     if use_bias:
         x = F.conv2d(x, weights_1, padding=0, groups=groups_1, bias=bias_1)
     else:
         x = F.conv2d(x, weights_1, padding=0, groups=groups_1)
 
-    x = torch.atan(x)
+    x = torch.sigmoid(x)
 
     return x
 
@@ -71,7 +69,7 @@ def stochastic_update(state_grid, perception, weights_0, weights_1, bias_0, bias
     # can I just use dropout here?
     mask = torch.rand_like(updated_grid) < rate
     mask = mask.double()
-    state_grid = mask * updated_grid + (1- mask) * state_grid
+    state_grid = mask * updated_grid + (1 - mask) * state_grid
 
     return state_grid
 
@@ -213,22 +211,17 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
                 plt.imshow(np.mean(np.abs(img2-tgt), axis=2))
                 plt.title("absolute mean difference")
                 plt.colorbar()
-                plt.savefig("output/epoch{}comp.png".format(epoch))
+                plt.savefig("output/epoch{}_comparison.png".format(epoch))
                 plt.close(fig)
 
             #skimage.io.imsave("./output/epoch{}state{}.png".format(epoch, ii), img)
-            fig = plt.figure(figsize=(9,3))
+            fig = plt.figure(figsize=(9,9))
 
-            for xyz in range(4):
-                plt.subplot(1, 4, xyz+1)
-                plt.imshow(state_grid[0,xyz,:,:].detach().cpu())
-                plt.title("ch{}, stp{}".format(xyz, ii))
-                plt.colorbar()
-            plt.savefig("./output/epoch{}state{}.png".format(epoch, ii))
+            plt.imshow(state_grid[0,0:4,:,:].permute(1,2,0).detach().cpu())
+            plt.title("step {}".format(ii))
+            plt.savefig("./output/epoch{}_state{}.png".format(epoch, ii))
             plt.close(fig)
             
-
-
             perception = sobel_conv2d(state_grid, device=device) 
             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                     bias_0, bias_1, rate=my_rate)
@@ -258,7 +251,7 @@ if __name__ == "__main__":
         bias_0 = torch.zeros(h_dim, dtype=my_dtype, device=device, requires_grad=True)
         bias_1 = torch.zeros(y_dim, dtype=my_dtype, device=device, requires_grad=True)
     else:
-        params = np.load("dca_model_bite.npy", allow_pickle=True)
+        params = np.load("dca_model.npy", allow_pickle=True)
         weights_0 = params[0]
         weights_1 = params[1]
         bias_0 = params[2]
@@ -276,7 +269,7 @@ if __name__ == "__main__":
         dir_list = os.listdir(training_dir)
         targets = torch.Tensor().double().to(device)
         
-        dim_x, dim_y = 256, 256
+        dim_x, dim_y = 64, 64
 
         for filename in dir_list:
 
@@ -293,31 +286,34 @@ if __name__ == "__main__":
             
         num_samples = targets.shape[0]
 
-        lr = 3e-4
+        lr = 2e-4
         disp_every = 1000 #20
-        batch_size = 4
-        num_epochs = 100000
+        batch_size = 1
+        num_epochs = 500000
         num_steps = 2
-        max_steps = 32
+        max_steps = 24
         my_rate = 0.9
         l2_reg = 1e-5
 
         xx, yy = np.meshgrid(np.linspace(-dim_x // 2, dim_x // 2, dim_x), \
                 np.linspace(-dim_x // 2 , dim_y // 2, dim_y))
+
         rr = np.sqrt(xx**2 + yy**2)
         rr = rr[np.newaxis, :, :]
         rr = rr * np.ones((y_dim, dim_x, dim_y))
         
         start_r = dim_x / 2
         radius = start_r * 1.0
-        min_r = dim_x / 64
-        r_decay = 0.95
+        min_r = dim_x / 32
+        r_decay = 0.995
         grid_mask = 0.1
         max_mask = 0.5
         mask_decay = 0.0005
         bite_increase = 0.1
         bite_max = 6.00
         bite_radius = 2.00
+
+        train_persistence = True
 
         optimizer = torch.optim.Adam([weights_0, weights_1, bias_0, bias_1], lr=lr)
         
@@ -371,7 +367,8 @@ if __name__ == "__main__":
                     state_grid = state_grid.to(device)
                     target_batch = target_batch.to(device)
 
-                    extra_steps = 6 #max([1, int(num_steps*0.5)])
+                    extra_steps = 8 #max([1, int(num_steps*0.5)])
+
                     loss = 0.0
                     for ii in range(num_steps + extra_steps): # + np.random.randint(int(num_steps/2))):
                         state_grid = alive_masking(state_grid)
@@ -380,26 +377,41 @@ if __name__ == "__main__":
 
                             pred = state_grid[:,0:4,:,:]
                             loss += torch.mean(torch.abs(pred-target_batch)\
-                                    + (pred-target_batch)**2) / extra_steps
+                                    + torch.abs(pred-target_batch)**2) / extra_steps
 
                         perception = sobel_conv2d(state_grid, device=device) 
                         state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                                 bias_0, bias_1, rate=my_rate)
 
+                    if train_persistence:
+                        # include a separate 
+                        for ii in range(num_steps + extra_steps): # + np.random.randint(int(num_steps/2))):
+                            state_grid = alive_masking(state_grid)
+
+                            if ii >= (num_steps):
+
+                                pred = state_grid[:,0:4,:,:]
+                                loss += torch.mean(torch.abs(pred-target_batch)\
+                                        + torch.abs(pred-target_batch)**2) / extra_steps
+
+                            perception = sobel_conv2d(state_grid, device=device) 
+                            state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
+                                    bias_0, bias_1, rate=my_rate)
+
 
                     for params in [weights_0, weights_1, bias_0, bias_1]:
-                        loss += l2_reg * torch.sum(params)
+                        loss += l2_reg * torch.sum(torch.abs(params)**2)
 
                     loss.backward()
 
                     optimizer.step()
 
-                    if loss <= 0.0125: #epoch % 20 == 0:
+                    if loss <= 0.025: #epoch % 20 == 0:
                         grid_mask = min([max_mask, grid_mask + mask_decay])
                         radius = max([min_r, radius * r_decay])
 
                         num_steps = max([6, \
-                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.125))])])
+                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.35))])])
 
                         bite_radius = min([bite_max, bite_radius + bite_increase])
 
