@@ -12,30 +12,32 @@ import skimage.io
 import skimage.transform 
 import matplotlib.pyplot as plt
 
-def sobel_conv2d(state_grid, device="cpu"):
+def get_perception(state_grid, device="cpu"):
 
     my_dim = state_grid.shape[1]
-    neighborhood = torch.tensor(np.array([[[[1, 1, 1], [1, 0, 1], [1, 1, 1]]]]),\
+    moore = torch.tensor(np.array([[[[1, 1, 1], [1, 0, 1], [1, 1, 1]]]]),\
             dtype=torch.float64)
     sobel_y = torch.tensor(np.array([[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]]),\
             dtype=torch.float64)
     sobel_x = torch.tensor(np.array([[[[-1, 2, -1], [0, 0, 0], [1, 2, 1]]]]), \
             dtype=torch.float64)
 
+    moore /= torch.sum(moore)
+
     sobel_x = sobel_x * torch.ones((state_grid.shape[1], 1, 3,3))
     sobel_y = sobel_y * torch.ones((state_grid.shape[1], 1, 3,3))
     sobel_x = sobel_x.to(device)
     sobel_y = sobel_y.to(device)
 
-    nbhd = neighborhood * torch.ones((state_grid.shape[1], 1, 3,3))
-    nbhd = nbhd.to(device)
+    moore = moore * torch.ones((state_grid.shape[1], 1, 3,3))
+    moore = moore.to(device)
 
     grad_x = F.conv2d(state_grid, sobel_x, padding=1, groups=my_dim)
     grad_y = F.conv2d(state_grid, sobel_y, padding=1, groups=my_dim)
 
-    grad_n = F.conv2d(state_grid, nbhd, padding=1, groups=my_dim)
+    moore_neighborhood = F.conv2d(state_grid, moore, padding=1, groups=my_dim)
 
-    perception = torch.cat([state_grid, grad_n, grad_x + grad_y], axis=1)
+    perception = torch.cat([state_grid, moore_neighborhood, grad_x + grad_y], axis=1)
 
     return perception
 
@@ -83,8 +85,9 @@ def alive_masking(state_grid, threshold = 0.1):
 
         temp[torch.mean(state_grid[0], dim=0) > 0.99] *= 0.0
         state_grid = torch.cat([state_grid, temp.unsqueeze(0).unsqueeze(0)], dim=1)
+
     # alpha value must be greater than 0.1 to count as alive
-    alive_mask = state_grid[:,3:4,:,:] > threshold #F.max_pool2d(state_grid[:,:,], kernel_size=3) > 0.1
+    alive_mask = state_grid[:,3:4,:,:] > threshold
     alive_mask = alive_mask.double()
     state_grid *= alive_mask
 
@@ -154,7 +157,7 @@ def evaluate_loss(weights_0, weights_1, bias_0, bias_1, target_batch, \
 
         for step in range(num_steps):
 
-            perception = sobel_conv2d(state_grid, device=device) 
+            perception = get_perception(state_grid, device=device) 
             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                     bias_0, bias_1, rate=my_rate)
 
@@ -222,7 +225,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
             plt.savefig("./output/epoch{}_state{}.png".format(epoch, ii))
             plt.close(fig)
             
-            perception = sobel_conv2d(state_grid, device=device) 
+            perception = get_perception(state_grid, device=device) 
             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                     bias_0, bias_1, rate=my_rate)
 
@@ -269,7 +272,7 @@ if __name__ == "__main__":
         dir_list = os.listdir(training_dir)
         targets = torch.Tensor().double().to(device)
         
-        dim_x, dim_y = 64, 64
+        dim_x, dim_y = 96, 96
 
         for filename in dir_list:
 
@@ -379,7 +382,7 @@ if __name__ == "__main__":
                             loss += torch.mean(torch.abs(pred-target_batch)\
                                     + torch.abs(pred-target_batch)**2) / extra_steps
 
-                        perception = sobel_conv2d(state_grid, device=device) 
+                        perception = get_perception(state_grid, device=device) 
                         state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                                 bias_0, bias_1, rate=my_rate)
 
@@ -394,7 +397,7 @@ if __name__ == "__main__":
                                 loss += torch.mean(torch.abs(pred-target_batch)\
                                         + torch.abs(pred-target_batch)**2) / extra_steps
 
-                            perception = sobel_conv2d(state_grid, device=device) 
+                            perception = get_perception(state_grid, device=device) 
                             state_grid = stochastic_update(state_grid, perception, weights_0, weights_1,\
                                     bias_0, bias_1, rate=my_rate)
 
