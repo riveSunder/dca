@@ -2,7 +2,6 @@ import numpy as np
 import time
 import os
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -186,7 +185,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
         inp = 1.0 * state_grid[0, 0:4, :, :].permute(1,2,0)
         state_grid = state_grid.to(device)
 
-        np.save("./dca_model.npy", [weights_0, weights_1, bias_0, bias_1])
+        np.save("./regrowth_dca_model.npy", [weights_0, weights_1, bias_0, bias_1])
         
         tgt = target.permute(1,2,0).cpu().numpy()
         for ii in range(num_steps*2+1):
@@ -214,7 +213,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
                 plt.imshow(np.mean(np.abs(img2-tgt), axis=2))
                 plt.title("absolute mean difference")
                 plt.colorbar()
-                plt.savefig("output/epoch{}_comparison.png".format(epoch))
+                plt.savefig("output/regrowth_epoch{}_comparison.png".format(epoch))
                 plt.close(fig)
 
             #skimage.io.imsave("./output/epoch{}state{}.png".format(epoch, ii), img)
@@ -222,7 +221,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
 
             plt.imshow(state_grid[0,0:4,:,:].permute(1,2,0).detach().cpu())
             plt.title("step {}".format(ii))
-            plt.savefig("./output/epoch{}_state{}.png".format(epoch, ii))
+            plt.savefig("./output/regrowth_epoch{}_state{}.png".format(epoch, ii))
             plt.close(fig)
             
             perception = get_perception(state_grid, device=device) 
@@ -235,7 +234,7 @@ if __name__ == "__main__":
     my_dtype = torch.float64
 
     if torch.cuda.is_available():
-        device = "cuda"
+        device = "cuda:0"
     else:
         device = "cpu"
 
@@ -272,7 +271,7 @@ if __name__ == "__main__":
         dir_list = os.listdir(training_dir)
         targets = torch.Tensor().double().to(device)
         
-        dim_x, dim_y = 96, 96
+        dim_x, dim_y = 64, 64
 
         for filename in dir_list:
 
@@ -289,12 +288,12 @@ if __name__ == "__main__":
             
         num_samples = targets.shape[0]
 
-        lr = 2e-4
+        lr = 3e-4
         disp_every = 1000 #20
         batch_size = 1
-        num_epochs = 500000
+        num_epochs = 250000
         num_steps = 2
-        max_steps = 24
+        max_steps = 16
         my_rate = 0.9
         l2_reg = 1e-5
 
@@ -305,18 +304,18 @@ if __name__ == "__main__":
         rr = rr[np.newaxis, :, :]
         rr = rr * np.ones((y_dim, dim_x, dim_y))
         
-        start_r = dim_x / 2
+        start_r = dim_x / 1
         radius = start_r * 1.0
-        min_r = dim_x / 32
-        r_decay = 0.995
+        min_r = dim_x / 1
+        r_decay = 0.99
         grid_mask = 0.1
-        max_mask = 0.5
+        max_mask = 0.1
         mask_decay = 0.0005
         bite_increase = 0.1
-        bite_max = 6.00
+        bite_max = 16.00
         bite_radius = 2.00
 
-        train_persistence = True
+        train_persistence = True #False
 
         optimizer = torch.optim.Adam([weights_0, weights_1, bias_0, bias_1], lr=lr)
         
@@ -413,7 +412,7 @@ if __name__ == "__main__":
                         grid_mask = min([max_mask, grid_mask + mask_decay])
                         radius = max([min_r, radius * r_decay])
 
-                        num_steps = max([6, \
+                        num_steps = max([4, \
                                 min([max_steps, int(num_steps + np.sign(np.random.randn()+0.35))])])
 
                         bite_radius = min([bite_max, bite_radius + bite_increase])
@@ -446,7 +445,7 @@ if __name__ == "__main__":
                     progress["epoch"].append(epoch)
                     progress["time"].append(wall_time)
 
-                    np.save("results/progress_{}.npy".format(exp_id), progress, allow_pickle=True)
+                    np.save("results/regrowth_progress_{}.npy".format(exp_id), progress, allow_pickle=True)
 
         except KeyboardInterrupt:
             pass
@@ -461,6 +460,6 @@ if __name__ == "__main__":
         progress["loss"].append(loss)
         progress["epoch"].append(epoch)
         progress["time"].append(wall_time)
-        np.save("results/progress_{}.npy".format(exp_id), progress, allow_pickle=True)
+        np.save("results/regrowth_progress_{}.npy".format(exp_id), progress, allow_pickle=True)
 
         print("here")
