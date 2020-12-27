@@ -2,6 +2,8 @@ import numpy as np
 import time
 import os
 
+import argparse
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,6 +14,9 @@ import skimage.transform
 import matplotlib.pyplot as plt
 
 def get_perception(state_grid, device="cpu"):
+
+
+
 
     my_dim = state_grid.shape[1]
     moore = torch.tensor(np.array([[[[1, 1, 1], [1, 0, 1], [1, 1, 1]]]]),\
@@ -185,7 +190,8 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
         inp = 1.0 * state_grid[0, 0:4, :, :].permute(1,2,0)
         state_grid = state_grid.to(device)
 
-        np.save("./regrowth_dca_model.npy", [weights_0, weights_1, bias_0, bias_1])
+        np.save("./models/{}_dca_model.npy".format(args.exp_name),\
+                [weights_0, weights_1, bias_0, bias_1])
         
         tgt = target.permute(1,2,0).cpu().numpy()
         for ii in range(num_steps*2+1):
@@ -213,7 +219,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
                 plt.imshow(np.mean(np.abs(img2-tgt), axis=2))
                 plt.title("absolute mean difference")
                 plt.colorbar()
-                plt.savefig("output/regrowth_epoch{}_comparison.png".format(epoch))
+                plt.savefig("output/{}_epoch{}_comparison.png".format(args.exp_name, epoch))
                 plt.close(fig)
 
             #skimage.io.imsave("./output/epoch{}state{}.png".format(epoch, ii), img)
@@ -221,7 +227,7 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
 
             plt.imshow(state_grid[0,0:4,:,:].permute(1,2,0).detach().cpu())
             plt.title("step {}".format(ii))
-            plt.savefig("./output/regrowth_epoch{}_state{}.png".format(epoch, ii))
+            plt.savefig("./output/{}_epoch{}_state{}.png".format(args.exp_name, epoch, ii))
             plt.close(fig)
             
             perception = get_perception(state_grid, device=device) 
@@ -230,11 +236,33 @@ def save_things(weights_0, weights_1, bias_0, bias_1, epoch=0, target=None, y_di
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-x", "--exp_name", type=str,\
+            default="default_exp", help="name of experiment")
+    parser.add_argument("-d", "--data_path", type=str,\
+            default="one_pokemon/", help="data folder")
+
+    parser.add_argument("-l", "--load", type=bool,\
+            default=False, help="load previous model")
+    parser.add_argument("-p", "--persistence", type=bool,\
+            default=False, help="use persistence loss")
+
+    parser.add_argument("-r", "--radius", type=float,\
+            default=6.0, help="minimum stopdown radius")
+    parser.add_argument("-b", "--bite", type=float,\
+            default=4.0, help="maximum bite radius")
+    parser.add_argument("-n", "--noise", type=float,\
+            default=0.20, help="maximum additive noise")
+
+
+    args = parser.parse_args()
+
     display = False
     my_dtype = torch.float64
 
     if torch.cuda.is_available():
-        device = "cuda:0"
+        device = "cuda:1"
     else:
         device = "cpu"
 
@@ -242,7 +270,13 @@ if __name__ == "__main__":
     y_dim = 16
     x_dim = y_dim * 3
 
-    if(1):
+    if(args.load):
+        params = np.load("{}_dca_model.npy".format(args.exp_name), allow_pickle=True)
+        weights_0 = params[0]
+        weights_1 = params[1]
+        bias_0 = params[2]
+        bias_1 = params[3]
+    elif(1):
         temp = 100
         weights_0 = ( temp * torch.randn(h_dim, x_dim, 1, 1, dtype=my_dtype, device=device)\
                 / (h_dim*x_dim))
@@ -252,22 +286,11 @@ if __name__ == "__main__":
         weights_1.requires_grad = True
         bias_0 = torch.zeros(h_dim, dtype=my_dtype, device=device, requires_grad=True)
         bias_1 = torch.zeros(y_dim, dtype=my_dtype, device=device, requires_grad=True)
-    else:
-        params = np.load("dca_model.npy", allow_pickle=True)
-        weights_0 = params[0]
-        weights_1 = params[1]
-        bias_0 = params[2]
-        bias_1 = params[3]
 
     
     if(1):
-        #filename = "./data/aghast00.png"
-        #filename = "./data/planarian_02.png"
 
-        # load training dataset
-        #training_dir = "./data/pokemon/training/"
-        training_dir = "./data/one_pokemon/"
-        #training_dir = "./data/training/"
+        training_dir = "./data/{}".format(args.data_path)
         dir_list = os.listdir(training_dir)
         targets = torch.Tensor().double().to(device)
         
@@ -294,8 +317,8 @@ if __name__ == "__main__":
         num_epochs = 250000
         num_steps = 2
         max_steps = 16
-        my_rate = 0.9
-        l2_reg = 1e-5
+        my_rate = 0.8
+        l2_reg = 1e-6
 
         xx, yy = np.meshgrid(np.linspace(-dim_x // 2, dim_x // 2, dim_x), \
                 np.linspace(-dim_x // 2 , dim_y // 2, dim_y))
@@ -306,16 +329,17 @@ if __name__ == "__main__":
         
         start_r = dim_x / 1
         radius = start_r * 1.0
-        min_r = dim_x / 1
         r_decay = 0.99
-        grid_mask = 0.1
-        max_mask = 0.1
+        grid_mask = 0.01
         mask_decay = 0.0005
         bite_increase = 0.1
-        bite_max = 16.00
-        bite_radius = 2.00
+        bite_radius = 1.00
 
-        train_persistence = True #False
+        bite_max = args.bite
+        max_mask = args.noise
+        min_r = args.radius
+
+        train_persistence = args.persistence
 
         optimizer = torch.optim.Adam([weights_0, weights_1, bias_0, bias_1], lr=lr)
         
@@ -412,8 +436,7 @@ if __name__ == "__main__":
                         grid_mask = min([max_mask, grid_mask + mask_decay])
                         radius = max([min_r, radius * r_decay])
 
-                        num_steps = max([4, \
-                                min([max_steps, int(num_steps + np.sign(np.random.randn()+0.35))])])
+                        num_steps = min([max_steps, num_steps + 1 ])
 
                         bite_radius = min([bite_max, bite_radius + bite_increase])
 
@@ -445,7 +468,8 @@ if __name__ == "__main__":
                     progress["epoch"].append(epoch)
                     progress["time"].append(wall_time)
 
-                    np.save("results/regrowth_progress_{}.npy".format(exp_id), progress, allow_pickle=True)
+                    np.save("results/{}_progress_{}.npy".format(args.exp_name, exp_id),\
+                            progress, allow_pickle=True)
 
         except KeyboardInterrupt:
             pass
@@ -460,6 +484,6 @@ if __name__ == "__main__":
         progress["loss"].append(loss)
         progress["epoch"].append(epoch)
         progress["time"].append(wall_time)
-        np.save("results/regrowth_progress_{}.npy".format(exp_id), progress, allow_pickle=True)
+        np.save("results/{}_progress_{}.npy".format(args.exp_name, exp_id), progress, allow_pickle=True)
 
         print("here")
