@@ -314,7 +314,7 @@ if __name__ == "__main__":
         lr = 3e-4
         disp_every = 1000 #20
         batch_size = 1
-        num_epochs = 250000
+        num_epochs = 60000
         num_steps = 2
         max_steps = 16
         my_rate = 0.8
@@ -333,7 +333,7 @@ if __name__ == "__main__":
         grid_mask = 0.01
         mask_decay = 0.0005
         bite_increase = 0.1
-        bite_radius = 1.00
+        bite_radius = 0.00
 
         bite_max = args.bite
         max_mask = args.noise
